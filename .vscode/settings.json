@@ -1,0 +1,4 @@
+{
+    "appService.defaultWebAppToDeploy": "/subscriptions/e3f480bc-27ad-49d9-b163-8c88c7d0ea9e/resourceGroups/rg-hotel/providers/Microsoft.Web/sites/urbanwadahotel",
+    "appService.deploySubpath": "backend"
+}
