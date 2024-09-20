@@ -5,7 +5,7 @@ const app = express();
 // Middleware
 app.use(express.json());
 
-// SQL Server configuration
+// SQL Server configuration with connection pooling
 const dbConfig = {
     user: 'urbanwada', // Update with your SQL Server username
     password: 'Admin@1845', // Update with your SQL Server password
@@ -13,14 +13,41 @@ const dbConfig = {
     database: 'urbanwada', // Your database name
     options: {
         encrypt: true, // This is needed for Azure SQL
-        trustServerCertificate: true // Ensure it's false for production unless needed
+        trustServerCertificate: false, // Ensure it's false for production unless needed
+        connectionTimeout: 30000, // Increase connection timeout to 30 seconds
+        requestTimeout: 30000, // Increase request timeout to 30 seconds
+    },
+    pool: {
+        max: 10, // Maximum number of connections in the pool
+        min: 0,  // Minimum number of connections in the pool
+        idleTimeoutMillis: 30000 // Close idle connections after 30 seconds
     }
 };
 
-// Connect to SQL Server once
-sql.connect(dbConfig)
-    .then(() => console.log('Connected to SQL Server'))
-    .catch(err => console.error('Database connection failed:', err));
+// Function to connect with retry logic
+async function connectWithRetry() {
+    let retries = 5;
+    while (retries) {
+        try {
+            await sql.connect(dbConfig);
+            console.log('Connected to SQL Server');
+            break; // Exit loop on successful connection
+        } catch (err) {
+            console.error('Database connection failed:', err);
+            retries -= 1;
+            console.log(`Retrying connection (${5 - retries}/5)`);
+            if (retries === 0) {
+                console.error('Could not connect to SQL Server after multiple attempts.');
+                throw err;
+            }
+            // Wait for 5 seconds before retrying
+            await new Promise(res => setTimeout(res, 5000));
+        }
+    }
+}
+
+// Call the function to establish connection with retry
+connectWithRetry();
 
 // POST API to add new user tracking
 app.post('/api/user_tracking', async (req, res) => {
