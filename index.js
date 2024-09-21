@@ -1,37 +1,37 @@
 const express = require('express');
 const sql = require('mssql');
 const app = express();
+const port = process.env.PORT || 3000;
 
-// Middleware
 app.use(express.json());
 
-// SQL Server configuration with connection pooling
+// SQL Server configuration
 const dbConfig = {
-    user: 'urbanwada', // Update with your SQL Server username
-    password: 'Admin@1845', // Update with your SQL Server password
-    server: 'urbanwada.database.windows.net', // Azure SQL Server address
-    database: 'urbanwada', // Your database name
+    user: 'urbanwada', 
+    password: 'Admin@1845', 
+    server: 'urbanwada.database.windows.net', 
+    database: 'urbanwada', 
     options: {
-        encrypt: true, // This is needed for Azure SQL
-        trustServerCertificate: false, // Ensure it's false for production unless needed
-        connectionTimeout: 30000, // Increase connection timeout to 30 seconds
-        requestTimeout: 30000, // Increase request timeout to 30 seconds
+        encrypt: true, 
+        trustServerCertificate: false, 
+        connectionTimeout: 30000, 
+        requestTimeout: 30000,
     },
     pool: {
-        max: 10, // Maximum number of connections in the pool
-        min: 0,  // Minimum number of connections in the pool
-        idleTimeoutMillis: 30000 // Close idle connections after 30 seconds
+        max: 10,
+        min: 0,
+        idleTimeoutMillis: 30000
     }
 };
 
-// Function to connect with retry logic
+// Function to connect to the database
 async function connectWithRetry() {
     let retries = 5;
     while (retries) {
         try {
             await sql.connect(dbConfig);
             console.log('Connected to SQL Server');
-            break; // Exit loop on successful connection
+            break;
         } catch (err) {
             console.error('Database connection failed:', err);
             retries -= 1;
@@ -40,14 +40,36 @@ async function connectWithRetry() {
                 console.error('Could not connect to SQL Server after multiple attempts.');
                 throw err;
             }
-            // Wait for 5 seconds before retrying
             await new Promise(res => setTimeout(res, 5000));
         }
     }
 }
 
-// Call the function to establish connection with retry
+// Call the function to establish connection
 connectWithRetry();
+
+// Function to log errors into the error_logs table
+async function logError(errorMessage, errorStack) {
+    try {
+        const request = new sql.Request();
+        const query = `INSERT INTO error_logs (error_message, error_stack) 
+                       VALUES (@errorMessage, @errorStack)`;
+
+        request.input('errorMessage', sql.NVarChar(sql.MAX), errorMessage);
+        request.input('errorStack', sql.NVarChar(sql.MAX), errorStack);
+
+        await request.query(query);
+    } catch (err) {
+        console.error('Failed to log error:', err);
+    }
+}
+
+// Middleware for error handling
+app.use(async (err, req, res, next) => {
+    console.error('Unhandled error:', err);
+    await logError(err.message, err.stack);
+    res.status(500).send(`Server error: ${err.message}`);
+});
 
 // POST API to add new user tracking
 app.post('/api/user_tracking', async (req, res) => {
@@ -67,33 +89,59 @@ app.post('/api/user_tracking', async (req, res) => {
         res.status(201).send('User tracking added successfully');
     } catch (err) {
         console.error('Error inserting user tracking:', err);
+        await logError(err.message, err.stack);
         res.status(500).send(`Server error: ${err.message}`);
     }
 });
 
-// GET API to get agent info and the latest user tracking entry
+// GET API to fetch agent info and the latest user tracking entry
+// GET API to fetch agent info and the latest user tracking entry
 app.get('/api/agent/:id', async (req, res) => {
     const agentId = req.params.id;
     try {
         const agentResult = await sql.query`SELECT * FROM agent WHERE agent_id = ${agentId}`;
-        const trackingResult = await sql.query`SELECT TOP 1 * FROM user_tracking WHERE agent_id = ${agentId} ORDER BY tracking_time DESC`;
+        const trackingResult = await sql.query`
+            SELECT TOP 1 * FROM user_tracking WHERE agent_id = ${agentId} ORDER BY tracking_time DESC`;
 
         const agent = agentResult.recordset[0];
         const latestTracking = trackingResult.recordset[0];
 
         if (!agent) {
-            return res.status(404).send('Agent not found');
+            const errorMessage = `Agent with ID ${agentId} not found`;
+            await logError(errorMessage, 'Agent not found in the database');
+            return res.status(404).send(errorMessage);
         }
 
         res.json({ agent, latestTracking });
     } catch (err) {
         console.error('Error fetching data:', err);
+        await logError(err.message, err.stack);
+        res.status(500).send(`Server error: ${err.message}`);
+    }
+});
+
+
+// GET API to fetch the latest tracking data for all agents
+app.get('/api/agents/tracking', async (req, res) => {
+    try {
+        const allTracking = await sql.query`SELECT agent_id, user_name, longitude, latitude, tracking_time 
+                                            FROM user_tracking 
+                                            ORDER BY tracking_time DESC`;
+
+        if (allTracking.recordset.length === 0) {
+            return res.status(404).send('No tracking data available');
+        }
+
+        res.json(allTracking.recordset);
+    } catch (err) {
+        console.error('Error fetching tracking data:', err);
+        await logError(err.message, err.stack);
         res.status(500).send(`Server error: ${err.message}`);
     }
 });
 
 // Start the server
-const port = 8080;
 app.listen(port, () => {
-    console.log(`Server running on port ${port}`);
+    console.log(`Server listening at http://localhost:${port}`);
 });
+CredentialsContainer
