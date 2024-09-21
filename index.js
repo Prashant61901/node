@@ -5,6 +5,7 @@ const port = process.env.PORT || 3000;
 
 app.use(express.json());
 
+
 // SQL Server configuration
 const dbConfig = {
     user: 'urbanwada', 
@@ -144,4 +145,3 @@ app.get('/api/agents/tracking', async (req, res) => {
 app.listen(port, () => {
     console.log(`Server listening at http://localhost:${port}`);
 });
-CredentialsContainer
