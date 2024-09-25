@@ -77,10 +77,13 @@ app.use(async (err, req, res, next) => {
 app.post('/api/user_tracking', async (req, res) => {
     const { agent_id, user_name, longitude, latitude } = req.body;
     try {
-        // Generate the current UTC time
-        const tracking_time = new Date(new Date().toUTCString());
+        // Generate the current UTC time and convert it to Indian Standard Time (IST)
+        let currentUTC = new Date();
+        let utcOffset = currentUTC.getTimezoneOffset() * 60000; // Get the offset in milliseconds
+        let indiaTimeOffset = 5.5 * 60 * 60 * 1000; // IST is UTC + 5:30 (5.5 hours)
+        let tracking_time = new Date(currentUTC.getTime() + indiaTimeOffset - utcOffset); // Adjust to IST
 
-        console.log('Current tracking time:', tracking_time);
+        console.log('Current tracking time in IST:', tracking_time);
         
         const request = new sql.Request();
         const query = `INSERT INTO user_tracking (agent_id, user_name, longitude, latitude, tracking_time) 
@@ -100,7 +103,6 @@ app.post('/api/user_tracking', async (req, res) => {
         res.status(500).send(`Server error: ${err.message}`);
     }
 });
-
 
 // GET API to fetch agent info and the latest user tracking entry
 app.get('/api/agent/:id', async (req, res) => {
