@@ -5,7 +5,6 @@ const port = process.env.PORT || 3000;
 
 app.use(express.json());
 
-
 // SQL Server configuration
 const dbConfig = {
     user: 'urbanwada', 
@@ -50,10 +49,12 @@ async function connectWithRetry() {
 connectWithRetry();
 
 // Function to log errors into the error_logs table
-async function logError(errorMessage, errorStack) {
+async function logError(errorMessage, errorStack ) {
     try {
+
+      
         const request = new sql.Request();
-        const query = `INSERT INTO error_logs (error_message, error_stack) 
+        const query = `INSERT INTO error_logs (error_message, error_stack ) 
                        VALUES (@errorMessage, @errorStack)`;
 
         request.input('errorMessage', sql.NVarChar(sql.MAX), errorMessage);
@@ -74,8 +75,13 @@ app.use(async (err, req, res, next) => {
 
 // POST API to add new user tracking
 app.post('/api/user_tracking', async (req, res) => {
-    const { agent_id, user_name, longitude, latitude, tracking_time } = req.body;
+    const { agent_id, user_name, longitude, latitude } = req.body;
     try {
+        // Generate the current UTC time
+        const tracking_time = new Date(new Date().toUTCString());
+
+        console.log('Current tracking time:', tracking_time);
+        
         const request = new sql.Request();
         const query = `INSERT INTO user_tracking (agent_id, user_name, longitude, latitude, tracking_time) 
                        VALUES (@agent_id, @user_name, @longitude, @latitude, @tracking_time)`;
@@ -95,7 +101,7 @@ app.post('/api/user_tracking', async (req, res) => {
     }
 });
 
-// GET API to fetch agent info and the latest user tracking entry
+
 // GET API to fetch agent info and the latest user tracking entry
 app.get('/api/agent/:id', async (req, res) => {
     const agentId = req.params.id;
@@ -140,6 +146,61 @@ app.get('/api/agents/tracking', async (req, res) => {
         res.status(500).send(`Server error: ${err.message}`);
     }
 });
+
+
+
+// POST API to add a new agent
+app.post('/api/agents', async (req, res) => {
+    const { name, address, mobile_no, is_active } = req.body;
+    try {
+        const request = new sql.Request();
+        const query = `INSERT INTO agent (name, address, mobile_no, is_active) 
+                       VALUES (@name, @address, @mobile_no, @is_active)`;
+
+        request.input('name', sql.NVarChar(100), name);
+        request.input('address', sql.NVarChar(255), address);
+        request.input('mobile_no', sql.NVarChar(15), mobile_no);
+        request.input('is_active', sql.Bit, is_active);
+
+        await request.query(query);
+        res.status(201).send('Agent added successfully');
+    } catch (err) {
+        console.error('Error inserting agent:', err);
+        await logError(err.message, err.stack);
+        res.status(500).send(`Server error: ${err.message}`);
+    }
+});
+
+
+
+
+// POST API for Admin Login
+app.post('/api/admin/login', async (req, res) => {
+    const { username, password } = req.body;
+
+    try {
+        // Query to get the admin record by username
+        const adminResult = await sql.query`SELECT * FROM admins WHERE username = ${username}`;
+
+        const admin = adminResult.recordset[0];
+        if (!admin) {
+            return res.status(404).send('Admin not found');
+        }
+
+        // Direct password comparison (plaintext) for simplicity
+        if (admin.password !== password) {
+            return res.status(401).send('Invalid credentials');
+        }
+
+        res.json({ message: 'Login successful' });
+    } catch (err) {
+        console.error('Error logging in:', err);
+        await logError(err.message, err.stack);
+        res.status(500).send('Server error');
+    }
+});
+
+
 
 // Start the server
 app.listen(port, () => {
