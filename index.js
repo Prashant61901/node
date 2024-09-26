@@ -175,7 +175,236 @@ app.post('/api/agents', async (req, res) => {
 
 
 
+// POST API to register a new customer
+app.post('/api/customers/register', async (req, res) => {
+    const { name, address, pincode, mobile, latitude, longitude, is_active } = req.body;
+    try {
+        // Generate the current UTC time and convert it to Indian Standard Time (IST)
+        let currentUTC = new Date();
+        let utcOffset = currentUTC.getTimezoneOffset() * 60000; // Get the offset in milliseconds
+        let indiaTimeOffset = 5.5 * 60 * 60 * 1000; // IST is UTC + 5:30 (5.5 hours)
+        let registration_time = new Date(currentUTC.getTime() + indiaTimeOffset - utcOffset); // Adjust to IST
 
+        console.log('Current registration time in IST:', registration_time);
+
+        const request = new sql.Request();
+        const query = `INSERT INTO customer_registration (name, address, pincode, mobile, latitude, longitude, registration_time, is_active) 
+                       VALUES (@name, @address, @pincode, @mobile, @latitude, @longitude, @registration_time, @is_active)`;
+
+        request.input('name', sql.NVarChar(100), name);
+        request.input('address', sql.NVarChar(255), address);
+        request.input('pincode', sql.NVarChar(10), pincode);
+        request.input('mobile', sql.NVarChar(15), mobile);
+        request.input('latitude', sql.Float, latitude);
+        request.input('longitude', sql.Float, longitude);
+        request.input('registration_time', sql.DateTime, registration_time); // Save IST time
+        request.input('is_active', sql.Bit, is_active);
+
+        await request.query(query);
+        res.status(201).send('Customer registered successfully');
+    } catch (err) {
+        console.error('Error registering customer:', err);
+        await logError(err.message, err.stack); // Assuming you have a function to log errors
+        res.status(500).send(`Server error: ${err.message}`);
+    }
+});
+
+
+
+// GET API to fetch all registered customers
+app.get('/api/customers', async (req, res) => {
+    try {
+        const result = await sql.query`SELECT id, name, address, pincode, mobile, latitude, longitude, registration_time, is_active 
+                                        FROM customer_registration 
+                                        ORDER BY registration_time DESC`;
+
+        if (result.recordset.length === 0) {
+            return res.status(404).send('No customers found');
+        }
+
+        res.json(result.recordset);
+    } catch (err) {
+        console.error('Error fetching customers:', err);
+        await logError(err.message, err.stack);
+        res.status(500).send(`Server error: ${err.message}`);
+    }
+});
+
+// GET API to fetch a customer by ID
+app.get('/api/customers/:id', async (req, res) => {
+    const customerId = req.params.id; // Extract the customer ID from the URL
+    try {
+        // Query to get the customer details based on the ID
+        const customerResult = await sql.query`SELECT id, name, address, pincode, mobile, latitude, longitude, registration_time, is_active 
+                                                FROM customer_registration 
+                                                WHERE id = ${customerId}`;
+
+        const customer = customerResult.recordset[0]; // Get the first record
+        if (!customer) {
+            return res.status(404).send(`Customer with ID ${customerId} not found`);
+        }
+
+        res.json(customer); // Respond with the customer details
+    } catch (err) {
+        console.error('Error fetching customer:', err);
+        await logError(err.message, err.stack);
+        res.status(500).send(`Server error: ${err.message}`);
+    }
+});
+
+
+// POST API to create a new order
+app.post('/api/orders', async (req, res) => {
+    const { agent_id, source_latitude, source_longitude, user_latitude, user_longitude, order_item_list, order_amount, customer_id } = req.body;
+    try {
+        let currentUTC = new Date();
+        let utcOffset = currentUTC.getTimezoneOffset() * 60000; // Get the offset in milliseconds
+        let indiaTimeOffset = 5.5 * 60 * 60 * 1000; // IST is UTC + 5:30
+        let order_created_time = new Date(currentUTC.getTime() + indiaTimeOffset - utcOffset); // Adjust to IST
+
+        const request = new sql.Request();
+        const query = `INSERT INTO orderdetails (agent_id, source_latitude, source_longitude, user_latitude, user_longitude, order_item_list, order_amount, customer_id, order_is_accepted, order_is_picked, order_is_delivered, order_is_accepted_time, order_is_picked_time, order_is_delivered_time) 
+                       VALUES (@agent_id, @source_latitude, @source_longitude, @user_latitude, @user_longitude, @order_item_list, @order_amount, @customer_id, 0, 0, 0, NULL, NULL, NULL)`;
+
+        request.input('agent_id', sql.Int, agent_id);
+        request.input('source_latitude', sql.Float, source_latitude);
+        request.input('source_longitude', sql.Float, source_longitude);
+        request.input('user_latitude', sql.Float, user_latitude);
+        request.input('user_longitude', sql.Float, user_longitude);
+        request.input('order_item_list', sql.NVarChar(sql.MAX), order_item_list);
+        request.input('order_amount', sql.Decimal(10, 2), order_amount);
+        request.input('customer_id', sql.Int, customer_id); // Add customer_id input
+
+        await request.query(query);
+        res.status(201).send('Order created successfully');
+    } catch (err) {
+        console.error('Error creating order:', err);
+        await logError(err.message, err.stack);
+        res.status(500).send(`Server error: ${err.message}`);
+    }
+});
+
+// GET API to fetch orders by customer ID
+app.get('/api/orders/customer/:customerId', async (req, res) => {
+    const customerId = req.params.customerId;
+    try {
+        const result = await sql.query`SELECT * FROM orderdetails WHERE customer_id = ${customerId} ORDER BY order_created_time DESC`;
+
+        if (result.recordset.length === 0) {
+            return res.status(404).send(`No orders found for customer ID ${customerId}`);
+        }
+
+        res.json(result.recordset);
+    } catch (err) {
+        console.error('Error fetching orders for customer:', err);
+        await logError(err.message, err.stack);
+        res.status(500).send(`Server error: ${err.message}`);
+    }
+});
+
+
+// GET API to retrieve an order by ID
+app.get('/api/orders/:id', async (req, res) => {
+    const orderId = req.params.id;
+    try {
+        const orderResult = await sql.query`SELECT * FROM orderdetails WHERE order_id = ${orderId}`;
+
+        const order = orderResult.recordset[0];
+        if (!order) {
+            return res.status(404).send(`Order with ID ${orderId} not found`);
+        }
+
+        res.json(order);
+    } catch (err) {
+        console.error('Error fetching order:', err);
+        await logError(err.message, err.stack);
+        res.status(500).send(`Server error: ${err.message}`);
+    }
+});
+
+// PUT API to update is_order_accepted
+app.put('/api/orders/:id/accept', async (req, res) => {
+    const orderId = req.params.id;
+    try {
+        let currentUTC = new Date();
+        let utcOffset = currentUTC.getTimezoneOffset() * 60000; // Get the offset in milliseconds
+        let indiaTimeOffset = 5.5 * 60 * 60 * 1000; // IST is UTC + 5:30
+        let order_is_accepted_time = new Date(currentUTC.getTime() + indiaTimeOffset - utcOffset); // Adjust to IST
+
+        const request = new sql.Request();
+        const query = `UPDATE orderdetails SET order_is_accepted = 1, order_is_accepted_time = @order_is_accepted_time WHERE order_id = @order_id`;
+
+        request.input('order_id', sql.Int, orderId);
+        request.input('order_is_accepted_time', sql.DateTime, order_is_accepted_time);
+
+        const result = await request.query(query);
+        if (result.rowsAffected[0] === 0) {
+            return res.status(404).send(`Order with ID ${orderId} not found`);
+        }
+
+        res.send('Order accepted successfully');
+    } catch (err) {
+        console.error('Error updating order acceptance:', err);
+        await logError(err.message, err.stack);
+        res.status(500).send(`Server error: ${err.message}`);
+    }
+});
+
+// PUT API to update is_order_picked
+app.put('/api/orders/:id/pick', async (req, res) => {
+    const orderId = req.params.id;
+    try {
+        let currentUTC = new Date();
+        let utcOffset = currentUTC.getTimezoneOffset() * 60000; // Get the offset in milliseconds
+        let indiaTimeOffset = 5.5 * 60 * 60 * 1000; // IST is UTC + 5:30
+        let order_is_picked_time = new Date(currentUTC.getTime() + indiaTimeOffset - utcOffset); // Adjust to IST
+
+        const request = new sql.Request();
+        const query = `UPDATE orderdetails SET order_is_picked = 1, order_is_picked_time = @order_is_picked_time WHERE order_id = @order_id`;
+
+        request.input('order_id', sql.Int, orderId);
+        request.input('order_is_picked_time', sql.DateTime, order_is_picked_time);
+
+        const result = await request.query(query);
+        if (result.rowsAffected[0] === 0) {
+            return res.status(404).send(`Order with ID ${orderId} not found`);
+        }
+
+        res.send('Order picked successfully');
+    } catch (err) {
+        console.error('Error updating order pick status:', err);
+        await logError(err.message, err.stack);
+        res.status(500).send(`Server error: ${err.message}`);
+    }
+});
+
+// PUT API to update is_order_delivered
+app.put('/api/orders/:id/deliver', async (req, res) => {
+    const orderId = req.params.id;
+    try {
+        let currentUTC = new Date();
+        let utcOffset = currentUTC.getTimezoneOffset() * 60000; // Get the offset in milliseconds
+        let indiaTimeOffset = 5.5 * 60 * 60 * 1000; // IST is UTC + 5:30
+        let order_is_delivered_time = new Date(currentUTC.getTime() + indiaTimeOffset - utcOffset); // Adjust to IST
+
+        const request = new sql.Request();
+        const query = `UPDATE orderdetails SET order_is_delivered = 1, order_is_delivered_time = @order_is_delivered_time WHERE order_id = @order_id`;
+
+        request.input('order_id', sql.Int, orderId);
+        request.input('order_is_delivered_time', sql.DateTime, order_is_delivered_time);
+
+        const result = await request.query(query);
+        if (result.rowsAffected[0] === 0) {
+            return res.status(404).send(`Order with ID ${orderId} not found`);
+        }
+
+        res.send('Order delivered successfully');
+    } catch (err) {
+        console.error('Error updating order delivery status:', err);
+        await logError(err.message, err.stack);
+        res.status(500).send(`Server error: ${err.message}`);
+    }
+});
 // POST API for Admin Login
 app.post('/api/admin/login', async (req, res) => {
     const { username, password } = req.body;
@@ -201,9 +430,6 @@ app.post('/api/admin/login', async (req, res) => {
         res.status(500).send('Server error');
     }
 });
-
-
-
 // Start the server
 app.listen(port, () => {
     console.log(`Server listening at http://localhost:${port}`);
