@@ -264,7 +264,8 @@ app.post('/api/orders', async (req, res) => {
 
         const request = new sql.Request();
         const query = `INSERT INTO orderdetails (agent_id, source_latitude, source_longitude, user_latitude, user_longitude, order_item_list, order_amount, customer_id, order_is_accepted, order_is_picked, order_is_delivered, order_is_accepted_time, order_is_picked_time, order_is_delivered_time) 
-                       VALUES (@agent_id, @source_latitude, @source_longitude, @user_latitude, @user_longitude, @order_item_list, @order_amount, @customer_id, 0, 0, 0, NULL, NULL, NULL)`;
+                       VALUES (@agent_id, @source_latitude, @source_longitude, @user_latitude, @user_longitude, @order_item_list, @order_amount, @customer_id, 0, 0, 0, NULL, NULL, NULL);
+                       SELECT SCOPE_IDENTITY() AS order_id;`; // Add to get the newly created order ID
 
         request.input('agent_id', sql.Int, agent_id);
         request.input('source_latitude', sql.Float, source_latitude);
@@ -275,12 +276,31 @@ app.post('/api/orders', async (req, res) => {
         request.input('order_amount', sql.Decimal(10, 2), order_amount);
         request.input('customer_id', sql.Int, customer_id); // Add customer_id input
 
-        await request.query(query);
-        res.status(201).send('Order created successfully');
+        const result = await request.query(query);
+        const orderId = result.recordset[0].order_id; // Get the order ID
+
+        // Create the response object
+        const responseData = {
+            order_id: orderId,
+            agent_id,
+            source_latitude,
+            source_longitude,
+            user_latitude,
+            user_longitude,
+            order_item_list,
+            order_amount,
+            customer_id,
+            order_created_time: order_created_time.toISOString() // Convert to ISO string format
+        };
+
+        res.status(201).json({
+            message: 'Order created successfully',
+            order: responseData
+        });
     } catch (err) {
         console.error('Error creating order:', err);
         await logError(err.message, err.stack);
-        res.status(500).send(`Server error: ${err.message}`);
+        res.status(500).json({ error: `Server error: ${err.message}` });
     }
 });
 
