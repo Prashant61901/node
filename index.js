@@ -425,31 +425,134 @@ app.put('/api/orders/:id/deliver', async (req, res) => {
         res.status(500).send(`Server error: ${err.message}`);
     }
 });
-// POST API for Admin Login
+
+// Function to get current IST time
+function getISTTime() {
+    const offset = 5.5 * 60 * 60 * 1000; // Offset for IST (5 hours 30 minutes)
+    const currentTime = new Date(new Date().getTime() + offset);
+    return currentTime;
+}
+
+// Admin Login API
 app.post('/api/admin/login', async (req, res) => {
-    const { username, password } = req.body;
+    const { email, password } = req.body; // Expecting email and password in request body
+
+    // Log the incoming request for debugging
+    console.log('Received email:', email, 'and password:', password);
 
     try {
-        // Query to get the admin record by username
-        const adminResult = await sql.query`SELECT * FROM admins WHERE username = ${username}`;
+        const request = new sql.Request();
 
-        const admin = adminResult.recordset[0];
-        if (!admin) {
-            return res.status(404).send('Admin not found');
+        // Query to get the last inserted admin based on CreatedAt timestamp
+        const lastInsertedResult = await request.query(`
+            SELECT TOP 1 * FROM AdminLogin 
+            ORDER BY CreatedAt DESC
+        `);
+
+        const lastInsertedAdmin = lastInsertedResult.recordset[0]; // Get the last inserted record
+        console.log('Last Inserted Admin:', lastInsertedAdmin); // Log last inserted admin details
+
+        // Query to check admin login credentials
+        const loginResult = await request
+            .input('Email', sql.VarChar, email)
+            .input('Password', sql.VarChar, password) // This should match how you store passwords (plain or hashed)
+            .query('SELECT * FROM AdminLogin WHERE Email = @Email AND Password = @Password');
+
+        if (loginResult.recordset.length > 0) {
+            // Compare with the last inserted admin's data
+            if (lastInsertedAdmin.Email === email && lastInsertedAdmin.Password === password) {
+                res.status(200).json({ 
+                    message: 'Admin login successful. You are the last inserted admin.', 
+                    user: loginResult.recordset[0] 
+                });
+            } else {
+                res.status(200).json({ 
+                    message: 'Admin login successful.', 
+                    user: loginResult.recordset[0] 
+                });
+            }
+        } else {
+            console.log('Invalid admin credentials: No matching records found'); // Log invalid case
+            res.status(401).json({ message: 'Invalid admin credentials' });
         }
-
-        // Direct password comparison (plaintext) for simplicity
-        if (admin.password !== password) {
-            return res.status(401).send('Invalid credentials');
-        }
-
-        res.json({ message: 'Login successful' });
-    } catch (err) {
-        console.error('Error logging in:', err);
-        await logError(err.message, err.stack);
-        res.status(500).send('Server error');
+    } catch (error) {
+        console.error('Error in admin login API:', error); // Log the entire error object
+        res.status(500).json({ message: 'Server error', error: error.message });
     }
 });
+
+
+// Agent Login API
+app.post('/api/agent/login', async (req, res) => {
+    const { email, password } = req.body; // Expecting email and password in request body
+
+    try {
+        const request = new sql.Request();
+
+        // Query to get the last inserted agent based on CreatedAt timestamp
+        const lastInsertedResult = await request.query(`
+            SELECT TOP 1 * FROM AgentLogin 
+            ORDER BY CreatedAt DESC
+        `);
+
+        const lastInsertedAgent = lastInsertedResult.recordset[0]; // Get the last inserted record
+
+        // Check if a last inserted agent record exists
+        if (!lastInsertedAgent) {
+            return res.status(401).json({ message: 'No agent found.' });
+        }
+
+        // Compare the provided email and password with the last inserted agent's data
+        if (lastInsertedAgent.Email === email && lastInsertedAgent.Password === password) {
+            return res.status(200).json({
+                message: 'Agent login successful. You are the last inserted agent.',
+                user: lastInsertedAgent
+            });
+        } else {
+            return res.status(401).json({ message: 'Invalid agent credentials' });
+        }
+    } catch (error) {
+        console.error('Error in agent login API:', error.message);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// Change Password API (for both Admin and Agent)
+app.put('/api/change-password', async (req, res) => {
+    const { email, newPassword, confirmPassword, userType } = req.body; // Get email, newPassword, confirmPassword, and userType
+
+    // Check if new password and confirm password match
+    if (newPassword !== confirmPassword) {
+        return res.status(400).json({ message: 'New password and confirm password do not match' });
+    }
+
+    try {
+        const request = new sql.Request();
+        const istTime = getISTTime();
+        let query;
+
+        if (userType === 'admin') {
+            query = 'UPDATE AdminLogin SET Password = @NewPassword, UpdatedAt = @UpdatedAt WHERE Email = @Email';
+        } else if (userType === 'agent') {
+            query = 'UPDATE AgentLogin SET Password = @NewPassword, UpdatedAt = @UpdatedAt WHERE Email = @Email';
+        } else {
+            return res.status(400).json({ message: 'Invalid user type' });
+        }
+
+        await request
+            .input('NewPassword', sql.VarChar, newPassword)
+            .input('UpdatedAt', sql.DateTime, istTime)
+            .input('Email', sql.VarChar, email)
+            .query(query);
+
+        res.status(200).json({ message: 'Password changed successfully' });
+    } catch (error) {
+        console.error('Error in change password API:', error.message);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+
 // Start the server
 app.listen(port, () => {
     console.log(`Server listening at http://localhost:${port}`);
