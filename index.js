@@ -176,8 +176,9 @@ app.post('/api/agents', async (req, res) => {
 
 
 // POST API to register a new customer
+// POST API to register a new customer
 app.post('/api/customers/register', async (req, res) => {
-    const { name, address, pincode, mobile, latitude, longitude, is_active } = req.body;
+    const { name, address, mobile, latitude, longitude, is_active, email } = req.body; // Include email
     try {
         // Generate the current UTC time and convert it to Indian Standard Time (IST)
         let currentUTC = new Date();
@@ -188,17 +189,17 @@ app.post('/api/customers/register', async (req, res) => {
         console.log('Current registration time in IST:', registration_time);
 
         const request = new sql.Request();
-        const query = `INSERT INTO customer_registration (name, address, pincode, mobile, latitude, longitude, registration_time, is_active) 
-                       VALUES (@name, @address, @pincode, @mobile, @latitude, @longitude, @registration_time, @is_active)`;
+        const query = `INSERT INTO customer_registration (name, address, mobile, latitude, longitude, registration_time, is_active, email) 
+                       VALUES (@name, @address, @mobile, @latitude, @longitude, @registration_time, @is_active, @email)`; // Update the query
 
         request.input('name', sql.NVarChar(100), name);
         request.input('address', sql.NVarChar(255), address);
-        request.input('pincode', sql.NVarChar(10), pincode);
         request.input('mobile', sql.NVarChar(15), mobile);
         request.input('latitude', sql.Float, latitude);
         request.input('longitude', sql.Float, longitude);
         request.input('registration_time', sql.DateTime, registration_time); // Save IST time
         request.input('is_active', sql.Bit, is_active);
+        request.input('email', sql.NVarChar(255), email); // Add email input
 
         await request.query(query);
         res.status(201).send('Customer registered successfully');
@@ -210,13 +211,12 @@ app.post('/api/customers/register', async (req, res) => {
 });
 
 
-
 // GET API to fetch all registered customers
 app.get('/api/customers', async (req, res) => {
     try {
-        const result = await sql.query`SELECT id, name, address, pincode, mobile, latitude, longitude, registration_time, is_active 
+        const result = await sql.query`SELECT id, name, address, mobile, latitude, longitude, registration_time, is_active, email 
                                         FROM customer_registration 
-                                        ORDER BY registration_time DESC`;
+                                        ORDER BY registration_time DESC`; // Update the SELECT statement
 
         if (result.recordset.length === 0) {
             return res.status(404).send('No customers found');
@@ -230,14 +230,15 @@ app.get('/api/customers', async (req, res) => {
     }
 });
 
+
 // GET API to fetch a customer by ID
 app.get('/api/customers/:id', async (req, res) => {
     const customerId = req.params.id; // Extract the customer ID from the URL
     try {
         // Query to get the customer details based on the ID
-        const customerResult = await sql.query`SELECT id, name, address, pincode, mobile, latitude, longitude, registration_time, is_active 
+        const customerResult = await sql.query`SELECT id, name, address, mobile, latitude, longitude, registration_time, is_active, email 
                                                 FROM customer_registration 
-                                                WHERE id = ${customerId}`;
+                                                WHERE id = ${customerId}`; // Update the SELECT statement
 
         const customer = customerResult.recordset[0]; // Get the first record
         if (!customer) {
@@ -251,6 +252,7 @@ app.get('/api/customers/:id', async (req, res) => {
         res.status(500).send(`Server error: ${err.message}`);
     }
 });
+
 
 
 // POST API to create a new order
