@@ -48,6 +48,10 @@ async function connectWithRetry() {
 // Call the function to establish connection
 connectWithRetry();
 
+
+
+
+
 // Function to log errors into the error_logs table
 async function logError(errorMessage, errorStack ) {
     try {
@@ -65,6 +69,7 @@ async function logError(errorMessage, errorStack ) {
         console.error('Failed to log error:', err);
     }
 }
+
 
 // Middleware for error handling
 app.use(async (err, req, res, next) => {
@@ -148,7 +153,6 @@ app.get('/api/agents/tracking', async (req, res) => {
         res.status(500).send(`Server error: ${err.message}`);
     }
 });
-
 
 
 // POST API to add a new agent
@@ -551,6 +555,134 @@ app.put('/api/change-password', async (req, res) => {
     } catch (error) {
         console.error('Error in change password API:', error.message);
         res.status(500).json({ message: 'Server error' });
+    }
+});
+
+
+// GET API to fetch a specific hotel by ID
+app.get('/api/hotels/:id', async (req, res) => {
+    const hotelId = req.params.id; // Extract the hotel ID from the request parameters
+
+    // Validate the hotel ID
+    if (!/^\d+$/.test(hotelId)) {
+        return res.status(400).json({ message: 'Invalid hotel ID format' });
+    }
+
+    try {
+        await sql.connect(dbConfig); // Connect to the database
+
+        const hotelResult = await sql.query`
+            SELECT 
+                HotelID, 
+                HotelName, 
+                Latitude, 
+                Longitude, 
+                VegNonVeg, 
+                HotelType, 
+                Rating, 
+                OfferDescription 
+            FROM 
+                Hotels 
+            WHERE 
+                HotelID = ${hotelId}
+        `;
+        
+        const hotel = hotelResult.recordset[0]; // Get the first record
+
+        if (!hotel) {
+            return res.status(404).json({ message: `Hotel with ID ${hotelId} not found` }); // Handle case where hotel does not exist
+        }
+
+        res.json(hotel); // Return the hotel details in JSON format
+    } catch (err) {
+        console.error('Error fetching hotel:', err); // Log the error
+        await logError(err.message, err.stack); // Assuming logError is a function that logs errors
+        res.status(500).json({ message: `Server error: ${err.message}` }); // Return a 500 error response
+    } finally {
+        await sql.close(); // Close the connection after the request is completed
+    }
+});
+
+// GET API to fetch all dish images for a specific hotel by hotel ID
+app.get('/api/hotels/:id/dish-images', async (req, res) => {
+    const hotelId = req.params.id; // Extract the hotel ID from the request parameters
+
+    // Validate the hotel ID
+    if (!/^\d+$/.test(hotelId)) {
+        return res.status(400).json({ message: 'Invalid hotel ID format' });
+    }
+
+    try {
+        // Directly connect to the database using sql.connect or your existing method
+        await sql.connect(dbConfig); // Ensure to replace dbConfig with your actual DB config
+
+        const imagesResult = await sql.query`
+            SELECT 
+                ImageUrl 
+            FROM 
+                Dishes 
+            WHERE 
+                HotelID = ${hotelId}
+        `;
+        
+        const images = imagesResult.recordset; // Get all images for the dishes
+
+        if (images.length === 0) {
+            return res.status(404).json({ message: `No dish images found for hotel ID ${hotelId}` }); // Handle case where no images exist
+        }
+
+        // Map the result to return only image URLs
+        const imageUrls = images.map(img => img.ImageUrl);
+
+        res.json(imageUrls); // Return the image URLs in JSON format
+    } catch (err) {
+        console.error('Error fetching dish images:', err); // Log the error
+        await logError(err.message, err.stack); // Assuming logError is a function that logs errors
+        res.status(500).json({ message: `Server error: ${err.message}` }); // Return a 500 error response
+    } finally {
+        await sql.close(); // Close the connection after the request is completed
+    }
+});
+
+// GET API to fetch all dishes for a specific hotel by hotel ID
+app.get('/api/hotels/:id/dishes', async (req, res) => {
+    const hotelId = req.params.id; // Extract the hotel ID from the request parameters
+
+    // Validate the hotel ID
+    if (!/^\d+$/.test(hotelId)) {
+        return res.status(400).json({ message: 'Invalid hotel ID format' });
+    }
+
+    try {
+        // Directly connect to the database using sql.connect
+        await sql.connect(dbConfig); // Ensure to replace dbConfig with your actual DB config
+
+        const dishesResult = await sql.query`
+            SELECT 
+                DishID, 
+                DishName, 
+                Description, 
+                Price, 
+                ImageUrl 
+            FROM 
+                Dishes 
+            WHERE 
+                HotelID = ${hotelId}
+        `;
+        
+        const dishes = dishesResult.recordset; // Get all dishes for the hotel
+
+        if (dishes.length === 0) {
+            return res.status(404).json({ message: `No dishes found for hotel ID ${hotelId}` }); // Handle case where no dishes exist
+        }
+
+        res.json(dishes); // Return the dishes in JSON format
+    } catch (err) {
+        console.error('Error fetching dishes:', err); // Log the error
+        await logError(err.message, err.stack); // Assuming logError is a function that logs errors
+        res.status(500).json({ message: `Server error: ${err.message}` }); // Return a 500 error response
+    } finally {
+        await sql.close(); // Close the connection after the request is completed
     }
 });
 
