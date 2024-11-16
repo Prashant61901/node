@@ -609,7 +609,7 @@ app.get('/api/hotels/:id/dish-images', async (req, res) => {
 
     // Validate the hotel ID
     if (!/^\d+$/.test(hotelId)) {
-        return res.status(400).json({ message: 'Invalid hotel ID format' });
+        return res.status(400).json({ data: [], message: 'Invalid hotel ID format' });
     }
 
     try {
@@ -628,21 +628,22 @@ app.get('/api/hotels/:id/dish-images', async (req, res) => {
         const images = imagesResult.recordset; // Get all images for the dishes
 
         if (images.length === 0) {
-            return res.status(404).json({ message: `No dish images found for hotel ID ${hotelId}` }); // Handle case where no images exist
+            return res.status(404).json({ data: [], message: `No dish images found for hotel ID ${hotelId}` }); // Handle case where no images exist
         }
 
         // Map the result to return only image URLs
         const imageUrls = images.map(img => img.ImageUrl);
 
-        res.json(imageUrls); // Return the image URLs in JSON format
+        res.json({ data: imageUrls }); // Return the image URLs in JSON format with the `data` key
     } catch (err) {
         console.error('Error fetching dish images:', err); // Log the error
         await logError(err.message, err.stack); // Assuming logError is a function that logs errors
-        res.status(500).json({ message: `Server error: ${err.message}` }); // Return a 500 error response
+        res.status(500).json({ data: [], message: `Server error: ${err.message}` }); // Return a 500 error response
     } finally {
         await sql.close(); // Close the connection after the request is completed
     }
 });
+
 
 // GET API to fetch all dishes for a specific hotel by hotel ID
 app.get('/api/hotels/:id/dishes', async (req, res) => {
